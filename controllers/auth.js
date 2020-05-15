@@ -1,6 +1,7 @@
 require('dotenv').config()
 let db = require('../models')
 let router = require('express').Router()
+let jwt = require('jsonwebtoken')
 
 // POST /auth/login (find and validate user; send token)
 router.post('/login', (req, res) => {
@@ -11,7 +12,39 @@ router.post('/login', (req, res) => {
 // POST to /auth/signup (create user; generate token)
 router.post('/signup', (req, res) => {
   console.log(req.body)
-  res.send('STUB POST /auth/signup')
+  // Look up the user by email to make sure they are "new"
+  db.User.findOne({ email: req.body.email })
+  .then(user => {
+  // If user exists alreadu then do NOT let them create another account
+  if (user) {
+    // NO NO! signup instead 
+    return res.status(409).send({ message: 'Email address in use 🤡' })
+  }
+
+    // We know the user is legiimately a new user: CREATE THEM!
+    db.User.create(req.body)
+    .then(newUser => {
+      // Yay! Things worked and users exists now! Create a token for the new user
+      let token = jwt.sign(newUser.toJSON(), process.env.JWT_SECRET, {
+        expiresIn: 120 //60 * 60 * 8 // 8 hours, in seconds
+      })
+
+      res.send({ token })
+    })
+    .catch(innerErr => {
+      console.log('Error creating user', innerErr)
+      if (innerErr.name === 'Validation Error') {
+        res.status(412).send({ message: `Validation Error! ${innerErr.message}.` })
+      }
+      else {
+        res.status(500).send({ message: 'Error creating user'})
+      }
+    })
+  })
+  .catch(err => {
+    console.log('ERROR IN POST /auth/signup', err)
+    res.status(503).send({ message: 'Database or server error' })
+  })
 })
 
 // NOTE: User should be logged in to access this route
